@@ -22,7 +22,7 @@ pub struct EnumSet<E> {
 }
 
 /// An interface for casting C-like enum to uint and back.
-pub trait CLike {
+pub trait CLike : Clone {
     /// Converts C-like enum to uint.
     fn to_uint(&self) -> uint;
     /// Converts uint to C-like enum.
@@ -44,6 +44,21 @@ impl<E:CLike> EnumSet<E> {
         self.bits == 0
     }
 
+    /// Add an enum to the set.
+    pub fn set(&mut self, e: E) {
+        self.bits |= bit(e);
+    }
+
+    /// Remove an enum from the set.
+    pub fn unset(&mut self, e: E) {
+        self.bits &= !bit(e);
+    }
+
+    /// Add as a synonym for set.
+    pub fn add(&mut self, e: E) {
+        self.bits |= bit(e);
+    }
+
     /// Returns true if an EnumSet contains any enum of a given EnumSet
     pub fn intersects(&self, e: EnumSet<E>) -> bool {
         (self.bits & e.bits) != 0
@@ -62,11 +77,6 @@ impl<E:CLike> EnumSet<E> {
     /// Returns a union of both EnumSets.
     pub fn union(&self, e: EnumSet<E>) -> EnumSet<E> {
         EnumSet {bits: self.bits | e.bits}
-    }
-
-    /// Add an enum to an EnumSet
-    pub fn add(&mut self, e: E) {
-        self.bits |= bit(e);
     }
 
     /// Returns true if an EnumSet contains a given enum
@@ -95,6 +105,60 @@ impl<E:CLike> BitOr<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
 impl<E:CLike> BitAnd<EnumSet<E>, EnumSet<E>> for EnumSet<E> {
     fn bitand(&self, e: &EnumSet<E>) -> EnumSet<E> {
         EnumSet {bits: self.bits & e.bits}
+    }
+}
+
+impl<E:CLike> Container for EnumSet<E> {
+    fn len(&self) -> uint {
+        self.bits.population_count()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+}
+
+impl<E:CLike> Mutable for EnumSet<E> {
+    fn clear(&mut self) {
+        self.bits = 0
+    }
+}
+
+impl<E:CLike> Set<E> for EnumSet<E> {
+    fn contains(&self, e: &E) -> bool {
+        self.contains_elem((*e).clone())
+    }
+
+    fn is_disjoint(&self, other: &EnumSet<E>) -> bool {
+        !self.intersects(*other)
+    }
+
+    fn is_subset(&self, other: &EnumSet<E>) -> bool {
+        (*other).contains(*self)
+    }
+
+    fn is_superset(&self, other: &EnumSet<E>) -> bool {
+        self.contains(*other)
+    }
+}
+
+impl<E:CLike> MutableSet<E> for EnumSet<E> {
+    fn insert(&mut self, e: E) -> bool {
+        if self.contains_elem(e.clone()) {
+            false
+        } else {
+            self.set(e);
+            true
+        }
+    }
+
+    fn remove(&mut self, e: &E) -> bool {
+        if self.contains_elem((*e).clone()) {
+            self.unset((*e).clone());
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -139,7 +203,7 @@ mod test {
 
     use enum_set::*;
 
-    #[deriving(Eq)]
+    #[deriving(Eq,Clone)]
     #[repr(uint)]
     enum Foo {
         A, B, C
@@ -162,6 +226,25 @@ mod test {
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    // add and remove
+
+    #[test]
+    fn test_add_and_remove() {
+        let mut e: EnumSet<Foo> = EnumSet::empty();
+        e.set(A);
+        e.set(B);
+        assert!(e.contains_elem(A));
+        assert!(e.contains_elem(B));
+        assert!(!e.contains_elem(C));
+
+        e.unset(B);
+        assert!(e.contains_elem(A));
+        assert!(!e.contains_elem(B));
+        assert!(!e.contains_elem(C));
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////
     // intersect
 
     #[test]
@@ -176,9 +259,9 @@ mod test {
         let e1: EnumSet<Foo> = EnumSet::empty();
 
         let mut e2: EnumSet<Foo> = EnumSet::empty();
-        e2.add(A);
-        e2.add(B);
-        e2.add(C);
+        e2.set(A);
+        e2.set(B);
+        e2.set(C);
 
         assert!(!e1.intersects(e2));
     }
@@ -186,10 +269,10 @@ mod test {
     #[test]
     fn test_disjoint_intersects() {
         let mut e1: EnumSet<Foo> = EnumSet::empty();
-        e1.add(A);
+        e1.set(A);
 
         let mut e2: EnumSet<Foo> = EnumSet::empty();
-        e2.add(B);
+        e2.set(B);
 
         assert!(!e1.intersects(e2));
     }
@@ -197,11 +280,11 @@ mod test {
     #[test]
     fn test_overlapping_intersects() {
         let mut e1: EnumSet<Foo> = EnumSet::empty();
-        e1.add(A);
+        e1.set(A);
 
         let mut e2: EnumSet<Foo> = EnumSet::empty();
-        e2.add(A);
-        e2.add(B);
+        e2.set(A);
+        e2.set(B);
 
         assert!(e1.intersects(e2));
     }
@@ -212,11 +295,11 @@ mod test {
     #[test]
     fn test_contains() {
         let mut e1: EnumSet<Foo> = EnumSet::empty();
-        e1.add(A);
+        e1.set(A);
 
         let mut e2: EnumSet<Foo> = EnumSet::empty();
-        e2.add(A);
-        e2.add(B);
+        e2.set(A);
+        e2.set(B);
 
         assert!(!e1.contains(e2));
         assert!(e2.contains(e1));
@@ -225,13 +308,13 @@ mod test {
     #[test]
     fn test_contains_elem() {
         let mut e1: EnumSet<Foo> = EnumSet::empty();
-        e1.add(A);
+        e1.set(A);
         assert!(e1.contains_elem(A));
         assert!(!e1.contains_elem(B));
         assert!(!e1.contains_elem(C));
 
-        e1.add(A);
-        e1.add(B);
+        e1.set(A);
+        e1.set(B);
         assert!(e1.contains_elem(A));
         assert!(e1.contains_elem(B));
         assert!(!e1.contains_elem(C));
@@ -247,19 +330,19 @@ mod test {
         let elems: ~[Foo] = e1.iter().collect();
         assert_eq!(~[], elems)
 
-        e1.add(A);
+        e1.set(A);
         let elems: ~[Foo] = e1.iter().collect();
         assert_eq!(~[A], elems)
 
-        e1.add(C);
+        e1.set(C);
         let elems: ~[Foo] = e1.iter().collect();
         assert_eq!(~[A,C], elems)
 
-        e1.add(C);
+        e1.set(C);
         let elems: ~[Foo] = e1.iter().collect();
         assert_eq!(~[A,C], elems)
 
-        e1.add(B);
+        e1.set(B);
         let elems: ~[Foo] = e1.iter().collect();
         assert_eq!(~[A,B,C], elems)
     }
@@ -270,12 +353,12 @@ mod test {
     #[test]
     fn test_operators() {
         let mut e1: EnumSet<Foo> = EnumSet::empty();
-        e1.add(A);
-        e1.add(C);
+        e1.set(A);
+        e1.set(C);
 
         let mut e2: EnumSet<Foo> = EnumSet::empty();
-        e2.add(B);
-        e2.add(C);
+        e2.set(B);
+        e2.set(C);
 
         let e_union = e1 | e2;
         let elems: ~[Foo] = e_union.iter().collect();
@@ -289,4 +372,24 @@ mod test {
         let elems: ~[Foo] = e_subtract.iter().collect();
         assert_eq!(~[A], elems)
     }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // mutable set interface
+
+    #[test]
+    fn test_mutable_set() {
+        let mut e: EnumSet<Foo> = EnumSet::empty();
+        let ea = A;
+        let eb = B;
+        e.insert(ea);
+        e.insert(eb);
+        assert!(e.contains_elem(A));
+        assert!(e.contains_elem(B));
+        assert!(!e.contains_elem(C));
+        e.remove(~eb);
+        assert!(e.contains_elem(A));
+        assert!(!e.contains_elem(B));
+        assert!(!e.contains_elem(C));
+    }
+
 }
